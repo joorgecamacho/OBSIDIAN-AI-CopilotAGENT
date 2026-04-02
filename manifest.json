@@ -1,0 +1,9 @@
+{
+	"id": "obsidian-agent",
+	"name": "Obsidian Agent",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "An AI chat agent for Obsidian that can create, read, edit, and search files in your vault. Powered by Ollama or any OpenAI-compatible API.",
+	"author": "Jorge Camacho",
+	"isDesktopOnly": false
+}
