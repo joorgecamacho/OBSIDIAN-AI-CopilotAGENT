@@ -31,8 +31,8 @@ A powerful, multimodal AI assistant directly integrated into your Obsidian vault
 ### Build from Source
 To compile the plugin yourself:
 ```bash
-git clone https://github.com/YOUR_USERNAME/obsidian-agent.git
-cd obsidian-agent
+git clone https://github.com/YOUR_USERNAME/OBSIDIAN-AI-CopilotAGENT.git
+cd OBSIDIAN-AI-CopilotAGENT
 npm install
 npm run build
 ```
