@@ -88,7 +88,7 @@ export interface PendingChange {
 
 // ── Attachments ───────────────────────────────────────────────
 
-export type AttachmentType = "image" | "pdf";
+export type AttachmentType = "image" | "pdf" | "markdown";
 
 export interface Attachment {
 	type: AttachmentType;

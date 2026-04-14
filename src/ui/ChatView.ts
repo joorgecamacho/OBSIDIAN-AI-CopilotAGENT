@@ -7,6 +7,7 @@ import { PDFParse } from "pdf-parse";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 const PDF_EXTENSIONS = ["pdf"];
+const MD_EXTENSIONS = ["md", "txt", "canvas"];
 
 export const CHAT_VIEW_TYPE = "obsidian-agent-chat";
 
@@ -90,7 +91,7 @@ export class ChatView extends ItemView {
 		// Attach file button
 		const attachBtn = inputWrapper.createEl("button", {
 			cls: "agent-chat-attach-btn",
-			attr: { "aria-label": "Attach file (image or PDF)" },
+			attr: { "aria-label": "Attach file (image, PDF or MD)" },
 		});
 		setIcon(attachBtn, "paperclip");
 		attachBtn.addEventListener("click", () => this.handleAttachFile());
@@ -172,6 +173,17 @@ export class ChatView extends ItemView {
 					data: `[Error reading PDF: ${err instanceof Error ? err.message : String(err)}]`,
 				});
 			}
+		} else if (MD_EXTENSIONS.includes(ext)) {
+			const text = await this.app.vault.read(file);
+			const MAX_CHARS = 100000;
+			const truncated = text.length > MAX_CHARS
+				? text.substring(0, MAX_CHARS) + "\n[... truncated ...]"
+				: text;
+			this.activeAttachments.push({
+				type: "markdown",
+				fileName: file.name,
+				data: truncated || "[Empty file]",
+			});
 		} else {
 			return; // Unsupported type, silently ignore
 		}
@@ -230,7 +242,7 @@ export class ChatView extends ItemView {
 		if (!activeFile) return;
 
 		const ext = activeFile.extension.toLowerCase();
-		if (!IMAGE_EXTENSIONS.includes(ext) && !PDF_EXTENSIONS.includes(ext)) {
+		if (!IMAGE_EXTENSIONS.includes(ext) && !PDF_EXTENSIONS.includes(ext) && !MD_EXTENSIONS.includes(ext)) {
 			// Not a supported file type — silently ignore
 			return;
 		}

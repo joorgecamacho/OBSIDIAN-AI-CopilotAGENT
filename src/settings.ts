@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, requestUrl } from "obsidian";
+import { App, PluginSettingTab, Setting, requestUrl, SuggestModal, Notice } from "obsidian";
 import type ObsidianAgent from "./main";
 import type { AgentSettings } from "./types";
 
@@ -16,6 +16,30 @@ export const DEFAULT_SETTINGS: AgentSettings = {
 		"Always confirm what you did after performing an action. " +
 		"Respond in the same language the user writes to you.",
 };
+
+class ModelSuggestModal extends SuggestModal<string> {
+	models: string[] = [];
+	onChoose: (model: string) => void;
+
+	constructor(app: App, models: string[], onChoose: (model: string) => void) {
+		super(app);
+		this.models = models;
+		this.onChoose = onChoose;
+		this.setPlaceholder("Search for a model...");
+	}
+
+	getSuggestions(query: string): string[] {
+		return this.models.filter((m) => m.toLowerCase().includes(query.toLowerCase()));
+	}
+
+	renderSuggestion(model: string, el: HTMLElement) {
+		el.createEl("div", { text: model });
+	}
+
+	onChooseSuggestion(model: string, evt: MouseEvent | KeyboardEvent) {
+		this.onChoose(model);
+	}
+}
 
 export class AgentSettingTab extends PluginSettingTab {
 	plugin: ObsidianAgent;
@@ -97,48 +121,64 @@ export class AgentSettingTab extends PluginSettingTab {
 			.setName("Model")
 			.setDesc("Select an Ollama model or type a custom name.");
 
-		modelSetting.addDropdown((dd) => {
-			dd.addOption("", "Loading models…");
-			dd.setValue(this.plugin.settings.ollamaModel);
-			dd.onChange(async (value) => {
+		let textEl: HTMLInputElement;
+
+		modelSetting.addText((text) => {
+			text.setPlaceholder("e.g. llama3, mistral");
+			text.setValue(this.plugin.settings.ollamaModel);
+			text.onChange(async (value) => {
 				this.plugin.settings.ollamaModel = value;
 				await this.plugin.saveSettings();
 			});
-			// Fetch models async
-			this.fetchOllamaModels(dd);
+			textEl = text.inputEl;
+		});
+
+		modelSetting.addButton((btn) => {
+			btn.setButtonText("Search");
+			btn.onClick(async () => {
+				btn.setButtonText("Loading...");
+				await this.searchOllamaModels(textEl);
+				btn.setButtonText("Search");
+			});
 		});
 	}
 
-	private async fetchOllamaModels(dropdown: import("obsidian").DropdownComponent): Promise<void> {
+	private async searchOllamaModels(textElement: HTMLInputElement): Promise<void> {
 		try {
 			const baseUrl = this.plugin.settings.ollamaBaseUrl.replace(/\/+$/, "");
-			const response = await requestUrl({ url: `${baseUrl}/api/tags` });
-			const data = response.json as { models?: { name: string }[] };
+			const allModels = new Set<string>();
 
-			// Clear and re-populate
-			dropdown.selectEl.empty();
-
-			if (data.models && data.models.length > 0) {
-				for (const model of data.models) {
-					dropdown.addOption(model.name, model.name);
+			try {
+				const res1 = await requestUrl({ url: `${baseUrl}/api/tags` });
+				const data1 = res1.json as { models?: { name: string }[] };
+				if (data1.models) {
+					data1.models.forEach((m) => { if (m.name) allModels.add(m.name); });
 				}
-				// Set saved value or first model
-				const saved = this.plugin.settings.ollamaModel;
-				if (saved && data.models.some((m) => m.name === saved)) {
-					dropdown.setValue(saved);
-				} else {
-					dropdown.setValue(data.models[0]?.name ?? "");
-					this.plugin.settings.ollamaModel = data.models[0]?.name ?? "";
+			} catch {}
+
+			try {
+				const res2 = await requestUrl({ url: `${baseUrl}/v1/models` });
+				const data2 = res2.json as { data?: { id: string }[] };
+				if (data2.data) {
+					data2.data.forEach((m) => { if (m.id) allModels.add(m.id); });
+				}
+			} catch {}
+
+			const modelArray = Array.from(allModels);
+			if (modelArray.length > 0) {
+				new ModelSuggestModal(this.app, modelArray, async (selected) => {
+					this.plugin.settings.ollamaModel = selected;
 					await this.plugin.saveSettings();
-				}
+					textElement.value = selected;
+				}).open();
 			} else {
-				dropdown.addOption("", "No models found");
+				new Notice("No models found. Check if the server is running.");
 			}
-		} catch {
-			dropdown.selectEl.empty();
-			dropdown.addOption("", "Could not connect to Ollama");
+		} catch (e) {
+			console.log("Could not connect to Ollama to fetch local models.", e);
 		}
 	}
+
 
 	// ── Custom API settings ───────────────────────────────────
 	private renderCustomSettings(containerEl: HTMLElement): void {
@@ -169,17 +209,61 @@ export class AgentSettingTab extends PluginSettingTab {
 					});
 			});
 
-		new Setting(containerEl)
+		const modelSetting = new Setting(containerEl)
 			.setName("Model")
-			.setDesc("Model identifier (e.g. gpt-4o, claude-3-5-sonnet).")
-			.addText((text) =>
-				text
-					.setPlaceholder("gpt-4o")
-					.setValue(this.plugin.settings.customModel)
-					.onChange(async (value) => {
-						this.plugin.settings.customModel = value;
-						await this.plugin.saveSettings();
-					})
-			);
+			.setDesc("Model identifier (e.g. gpt-4o, claude-3-5-sonnet).");
+
+		let textEl: HTMLInputElement;
+
+		modelSetting.addText((text) => {
+			text.setPlaceholder("gpt-4o");
+			text.setValue(this.plugin.settings.customModel);
+			text.onChange(async (value) => {
+				this.plugin.settings.customModel = value;
+				await this.plugin.saveSettings();
+			});
+			textEl = text.inputEl;
+		});
+
+		modelSetting.addButton((btn) => {
+			btn.setButtonText("Search");
+			btn.onClick(async () => {
+				btn.setButtonText("Loading...");
+				await this.searchCustomModels(textEl);
+				btn.setButtonText("Search");
+			});
+		});
+	}
+
+	private async searchCustomModels(textElement: HTMLInputElement): Promise<void> {
+		if (!this.plugin.settings.customBaseUrl) {
+			new Notice("Please set the API base URL first.");
+			return;
+		}
+		try {
+			const baseUrl = this.plugin.settings.customBaseUrl.replace(/\/+$/, "");
+			const headers: Record<string, string> = {};
+			if (this.plugin.settings.customApiKey) {
+				headers["Authorization"] = `Bearer ${this.plugin.settings.customApiKey}`;
+			}
+			const response = await requestUrl({ 
+				url: `${baseUrl}/models`,
+				headers
+			});
+			const data = response.json as { data?: { id: string }[] };
+
+			if (data.data && data.data.length > 0) {
+				const models = data.data.map(m => m.id).filter(Boolean);
+				new ModelSuggestModal(this.app, models, async (selected) => {
+					this.plugin.settings.customModel = selected;
+					await this.plugin.saveSettings();
+					textElement.value = selected;
+				}).open();
+			} else {
+				new Notice("No models found from this custom API.");
+			}
+		} catch {
+			new Notice("Could not fetch remote models. Please check your URL and API key.");
+		}
 	}
 }

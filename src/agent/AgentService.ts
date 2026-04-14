@@ -46,13 +46,15 @@ export class AgentService {
 		const hasImages = attachments?.some(a => a.type === "image") ?? false;
 		const pdfTexts = attachments?.filter(a => a.type === "pdf") ?? [];
 
-		// Prepend PDF text as context to the user's message
+		// Prepend PDF/MD text as context to the user's message
 		let textContent = userMessage;
-		if (pdfTexts.length > 0) {
-			const pdfContext = pdfTexts.map(p =>
-				`[PDF Content from "${p.fileName}"]:\n${p.data}`
+		const textAttachments = attachments?.filter(a => a.type === "pdf" || a.type === "markdown") ?? [];
+
+		if (textAttachments.length > 0) {
+			const textContext = textAttachments.map(a =>
+				`[Content from "${a.fileName}"]:\n${a.data}`
 			).join("\n\n");
-			textContent = `${pdfContext}\n\nUser Request: ${textContent}`;
+			textContent = `${textContext}\n\nUser Request: ${textContent}`;
 		}
 
 		if (hasImages) {
